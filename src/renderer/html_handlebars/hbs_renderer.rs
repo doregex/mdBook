@@ -29,6 +29,7 @@ impl HtmlHandlebars {
         item: &BookItem,
         mut ctx: RenderItemContext<'_>,
         print_content: &mut String,
+        single_page_content: &mut String,
     ) -> Result<()> {
         // FIXME: This should be made DRY-er and rely less on mutable state
 
@@ -53,6 +54,10 @@ impl HtmlHandlebars {
 
         let content = ch.content.clone();
         let content = utils::render_markdown(&content, ctx.html_config.curly_quotes);
+
+        if ctx.html_config.single_page {
+            single_page_content.push_str(&content);
+        }
 
         let fixed_content =
             utils::render_markdown_with_path(&ch.content, ctx.html_config.curly_quotes, Some(path));
@@ -333,6 +338,7 @@ impl HtmlHandlebars {
             "toc",
             Box::new(helpers::toc::RenderToc {
                 no_section_label: html_config.no_section_label,
+                single_page: html_config.single_page
             }),
         );
         handlebars.register_helper("previous", Box::new(helpers::navigation::previous));
@@ -528,6 +534,7 @@ impl Renderer for HtmlHandlebars {
             .with_context(|| "Unexpected error when constructing destination path")?;
 
         let mut is_index = true;
+        let mut single_page_content = String::new();
         for item in book.iter() {
             let ctx = RenderItemContext {
                 handlebars: &handlebars,
@@ -539,9 +546,41 @@ impl Renderer for HtmlHandlebars {
                 edition: ctx.config.rust.edition,
                 chapter_titles: &ctx.chapter_titles,
             };
-            self.render_item(item, ctx, &mut print_content)?;
+            self.render_item(item, ctx, &mut print_content, &mut single_page_content)?;
+
             // Only the first non-draft chapter item should be treated as the "index"
             is_index &= !matches!(item, BookItem::Chapter(ch) if !ch.is_draft_chapter());
+        }
+
+        if html_config.single_page {
+            let mut ctx_render = RenderItemContext {
+                handlebars: &handlebars,
+                destination: destination.to_path_buf(),
+                data: data.clone(),
+                is_index,
+                book_config: book_config.clone(),
+                html_config: html_config.clone(),
+                edition: ctx.config.rust.edition,
+                chapter_titles: &ctx.chapter_titles,
+            };
+
+            let path = &PathBuf::from("single-page");
+
+            let title = "PBX";
+
+            ctx_render.data.insert("path".to_owned(), json!(path));
+            ctx_render.data.insert("content".to_owned(), json!(single_page_content));
+            ctx_render.data.insert("chapter_title".to_owned(), json!(""));
+            ctx_render.data.insert("title".to_owned(), json!(title));
+
+            // Render the handlebars template with the data
+            debug!("Render single page template");
+            let rendered = ctx_render.handlebars.render("index", &ctx_render.data)?;
+
+            let rendered = self.post_process(rendered, &ctx_render.html_config.playground, ctx_render.edition);
+
+            let filepath = Path::new("index").with_extension("html");
+            utils::fs::write_file(&ctx_render.destination, &filepath, rendered.as_bytes())?;
         }
 
         // Render 404 page
@@ -720,6 +759,7 @@ fn make_data(
     data.insert("git_repository_icon".to_owned(), json!(git_repository_icon));
 
     let mut chapters = vec![];
+    let mut counter = 0;
 
     for item in book.iter() {
         // Create the data to inject in the template
@@ -738,6 +778,11 @@ fn make_data(
                     "has_sub_items".to_owned(),
                     json!((!ch.sub_items.is_empty()).to_string()),
                 );
+
+                chapter.insert("content".to_owned(), json!(ch.content.to_string()));
+                chapter.insert("counter".to_owned(), json!(counter.to_string()));
+
+                counter += 1;
 
                 chapter.insert("name".to_owned(), json!(ch.name));
                 if let Some(ref path) = ch.path {
@@ -769,14 +814,23 @@ fn build_header_links(html: &str) -> String {
     }
 
     let mut id_counter = HashMap::new();
+    // let mut counter = -1;
 
     BUILD_HEADER_LINKS
         .replace_all(html, |caps: &Captures<'_>| {
-            let level = caps[1]
+            let level : usize = caps[1]
                 .parse()
                 .expect("Regex should ensure we only ever get numbers here");
-
             insert_link_into_header(level, &caps[2], &mut id_counter)
+            // if level == 1 {
+            //     counter += 1;
+            // } 
+            // format!(
+            //     r##"<h{level} id="{id}"><a class="header" href="#{id}">{text}</a></h{level}>"##,
+            //     level = level,
+            //     id = counter,
+            //     text = &caps[2]
+            // )
         })
         .into_owned()
 }

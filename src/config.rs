@@ -537,6 +537,8 @@ pub struct HtmlConfig {
     /// The mapping from old pages to new pages/URLs to use when generating
     /// redirects.
     pub redirect: HashMap<String, String>,
+    /// Do you wnat to render it as single page?
+    pub single_page: bool,
 }
 
 impl Default for HtmlConfig {
@@ -564,6 +566,7 @@ impl Default for HtmlConfig {
             cname: None,
             live_reload_endpoint: None,
             redirect: HashMap::new(),
+            single_page: false,
         }
     }
 }

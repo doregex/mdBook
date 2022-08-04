@@ -10,6 +10,7 @@ use handlebars::{Context, Handlebars, Helper, HelperDef, Output, RenderContext, 
 #[derive(Clone, Copy)]
 pub struct RenderToc {
     pub no_section_label: bool,
+    pub single_page: bool,
 }
 
 impl HelperDef for RenderToc {
@@ -123,16 +124,28 @@ impl HelperDef for RenderToc {
             {
                 out.write("<a href=\"")?;
 
-                let tmp = Path::new(item.get("path").expect("Error: path should be Some(_)"))
+                if self.single_page {
+                    out.write("#")?;
+
+                    if let Some(html) = item.get("content") {
+                        let html = html.as_str().replace("#", "").replace(".", "").trim().replace(" ", "-").replace("'", "").replace("’", "").to_lowercase().to_owned();
+                        let mut lines = html.lines();
+                        out.write(&lines.next().unwrap());
+                    }
+
+                } else {
+                    let tmp = Path::new(item.get("path").expect("Error: path should be Some(_)"))
                     .with_extension("html")
                     .to_str()
                     .unwrap()
                     // Hack for windows who tends to use `\` as separator instead of `/`
                     .replace('\\', "/");
 
-                // Add link
-                out.write(&utils::fs::path_to_root(&current_path))?;
-                out.write(&tmp)?;
+                    // Add link
+                    out.write(&utils::fs::path_to_root(&current_path))?;
+                    out.write(&tmp)?;
+                }
+
                 out.write("\"")?;
 
                 if path == &current_path || is_first_chapter {
