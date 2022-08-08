@@ -59,74 +59,78 @@ impl HtmlHandlebars {
             single_page_content.push_str(&content);
         }
 
-        let fixed_content =
+        if ctx.html_config.print.enable {
+            let fixed_content =
             utils::render_markdown_with_path(&ch.content, ctx.html_config.curly_quotes, Some(path));
-        if !ctx.is_index && ctx.html_config.print.page_break {
-            // Add page break between chapters
-            // See https://developer.mozilla.org/en-US/docs/Web/CSS/break-before and https://developer.mozilla.org/en-US/docs/Web/CSS/page-break-before
-            // Add both two CSS properties because of the compatibility issue
-            print_content
-                .push_str(r#"<div style="break-before: page; page-break-before: always;"></div>"#);
-        }
-        print_content.push_str(&fixed_content);
-
-        // Update the context with data for this file
-        let ctx_path = path
-            .to_str()
-            .with_context(|| "Could not convert path to str")?;
-        let filepath = Path::new(&ctx_path).with_extension("html");
-
-        // "print.html" is used for the print page.
-        if path == Path::new("print.md") {
-            bail!("{} is reserved for internal use", path.display());
-        };
-
-        let book_title = ctx
-            .data
-            .get("book_title")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("");
-
-        let title = if let Some(title) = ctx.chapter_titles.get(path) {
-            title.clone()
-        } else if book_title.is_empty() {
-            ch.name.clone()
-        } else {
-            ch.name.clone() + " - " + book_title
-        };
-
-        ctx.data.insert("path".to_owned(), json!(path));
-        ctx.data.insert("content".to_owned(), json!(content));
-        ctx.data.insert("chapter_title".to_owned(), json!(ch.name));
-        ctx.data.insert("title".to_owned(), json!(title));
-        ctx.data.insert(
-            "path_to_root".to_owned(),
-            json!(utils::fs::path_to_root(&path)),
-        );
-        if let Some(ref section) = ch.number {
-            ctx.data
-                .insert("section".to_owned(), json!(section.to_string()));
+            if !ctx.is_index && ctx.html_config.print.page_break {
+                // Add page break between chapters
+                // See https://developer.mozilla.org/en-US/docs/Web/CSS/break-before and https://developer.mozilla.org/en-US/docs/Web/CSS/page-break-before
+                // Add both two CSS properties because of the compatibility issue
+                print_content
+                    .push_str(r#"<div style="break-before: page; page-break-before: always;"></div>"#);
+            }
+            print_content.push_str(&fixed_content);
         }
 
-        // Render the handlebars template with the data
-        debug!("Render template");
-        let rendered = ctx.handlebars.render("index", &ctx.data)?;
+        if !ctx.html_config.single_page {
+            // Update the context with data for this file
+            let ctx_path = path
+                .to_str()
+                .with_context(|| "Could not convert path to str")?;
+            let filepath = Path::new(&ctx_path).with_extension("html");
 
-        let rendered = self.post_process(rendered, &ctx.html_config.playground, ctx.edition);
+            // "print.html" is used for the print page.
+            if path == Path::new("print.md") {
+                bail!("{} is reserved for internal use", path.display());
+            };
 
-        // Write to file
-        debug!("Creating {}", filepath.display());
-        utils::fs::write_file(&ctx.destination, &filepath, rendered.as_bytes())?;
+            let book_title = ctx
+                .data
+                .get("book_title")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("");
 
-        if ctx.is_index {
-            ctx.data.insert("path".to_owned(), json!("index.md"));
-            ctx.data.insert("path_to_root".to_owned(), json!(""));
-            ctx.data.insert("is_index".to_owned(), json!(true));
-            let rendered_index = ctx.handlebars.render("index", &ctx.data)?;
-            let rendered_index =
-                self.post_process(rendered_index, &ctx.html_config.playground, ctx.edition);
-            debug!("Creating index.html from {}", ctx_path);
-            utils::fs::write_file(&ctx.destination, "index.html", rendered_index.as_bytes())?;
+            let title = if let Some(title) = ctx.chapter_titles.get(path) {
+                title.clone()
+            } else if book_title.is_empty() {
+                ch.name.clone()
+            } else {
+                ch.name.clone() + " - " + book_title
+            };
+
+            ctx.data.insert("path".to_owned(), json!(path));
+            ctx.data.insert("content".to_owned(), json!(content));
+            ctx.data.insert("chapter_title".to_owned(), json!(ch.name));
+            ctx.data.insert("title".to_owned(), json!(title));
+            ctx.data.insert(
+                "path_to_root".to_owned(),
+                json!(utils::fs::path_to_root(&path)),
+            );
+            if let Some(ref section) = ch.number {
+                ctx.data
+                    .insert("section".to_owned(), json!(section.to_string()));
+            }
+
+            // Render the handlebars template with the data
+            debug!("Render template");
+            let rendered = ctx.handlebars.render("index", &ctx.data)?;
+
+            let rendered = self.post_process(rendered, &ctx.html_config.playground, ctx.edition);
+
+            // Write to file
+            debug!("Creating {}", filepath.display());
+            utils::fs::write_file(&ctx.destination, &filepath, rendered.as_bytes())?;
+
+            if ctx.is_index {
+                ctx.data.insert("path".to_owned(), json!("index.md"));
+                ctx.data.insert("path_to_root".to_owned(), json!(""));
+                ctx.data.insert("is_index".to_owned(), json!(true));
+                let rendered_index = ctx.handlebars.render("index", &ctx.data)?;
+                let rendered_index =
+                    self.post_process(rendered_index, &ctx.html_config.playground, ctx.edition);
+                debug!("Creating index.html from {}", ctx_path);
+                utils::fs::write_file(&ctx.destination, "index.html", rendered_index.as_bytes())?;
+            }
         }
 
         Ok(())
@@ -759,7 +763,6 @@ fn make_data(
     data.insert("git_repository_icon".to_owned(), json!(git_repository_icon));
 
     let mut chapters = vec![];
-    let mut counter = 0;
 
     for item in book.iter() {
         // Create the data to inject in the template
@@ -780,9 +783,6 @@ fn make_data(
                 );
 
                 chapter.insert("content".to_owned(), json!(ch.content.to_string()));
-                chapter.insert("counter".to_owned(), json!(counter.to_string()));
-
-                counter += 1;
 
                 chapter.insert("name".to_owned(), json!(ch.name));
                 if let Some(ref path) = ch.path {
@@ -814,23 +814,13 @@ fn build_header_links(html: &str) -> String {
     }
 
     let mut id_counter = HashMap::new();
-    // let mut counter = -1;
 
     BUILD_HEADER_LINKS
         .replace_all(html, |caps: &Captures<'_>| {
-            let level : usize = caps[1]
+            let level = caps[1]
                 .parse()
                 .expect("Regex should ensure we only ever get numbers here");
             insert_link_into_header(level, &caps[2], &mut id_counter)
-            // if level == 1 {
-            //     counter += 1;
-            // } 
-            // format!(
-            //     r##"<h{level} id="{id}"><a class="header" href="#{id}">{text}</a></h{level}>"##,
-            //     level = level,
-            //     id = counter,
-            //     text = &caps[2]
-            // )
         })
         .into_owned()
 }
