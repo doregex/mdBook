@@ -621,7 +621,7 @@ impl Renderer for HtmlHandlebars {
         {
             let search = html_config.search.unwrap_or_default();
             if search.enable {
-                super::search::create_files(&search, destination, book)?;
+                super::search::create_files(&search, destination, book, html_config.single_page)?;
             }
         }
 

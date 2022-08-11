@@ -25,7 +25,7 @@ fn tokenize(text: &str) -> Vec<String> {
 }
 
 /// Creates all files required for search.
-pub fn create_files(search_config: &Search, destination: &Path, book: &Book) -> Result<()> {
+pub fn create_files(search_config: &Search, destination: &Path, book: &Book, single_page: bool) -> Result<()> {
     let mut index = IndexBuilder::new()
         .add_field_with_tokenizer("title", Box::new(&tokenize))
         .add_field_with_tokenizer("body", Box::new(&tokenize))
@@ -35,7 +35,7 @@ pub fn create_files(search_config: &Search, destination: &Path, book: &Book) -> 
     let mut doc_urls = Vec::with_capacity(book.sections.len());
 
     for item in book.iter() {
-        render_item(&mut index, search_config, &mut doc_urls, item)?;
+        render_item(&mut index, search_config, &mut doc_urls, item, single_page)?;
     }
 
     let index = write_to_json(index, search_config, doc_urls)?;
@@ -67,9 +67,15 @@ fn add_doc(
     anchor_base: &str,
     section_id: &Option<String>,
     items: &[&str],
+    single_page: bool,
 ) {
+    let anchor_base_url: &str = if single_page {
+        &"index.html"
+    } else {
+        anchor_base
+    };
     let url = if let Some(ref id) = *section_id {
-        Cow::Owned(format!("{}#{}", anchor_base, id))
+        Cow::Owned(format!("{}#{}", anchor_base_url, id))
     } else {
         Cow::Borrowed(anchor_base)
     };
@@ -87,6 +93,7 @@ fn render_item(
     search_config: &Search,
     doc_urls: &mut Vec<String>,
     item: &BookItem,
+    single_page: bool,
 ) -> Result<()> {
     let chapter = match *item {
         BookItem::Chapter(ref ch) if !ch.is_draft_chapter() => ch,
@@ -128,6 +135,7 @@ fn render_item(
                         &anchor_base,
                         &section_id,
                         &[&heading, &body, &breadcrumbs.join(" » ")],
+                        single_page,
                     );
                     section_id = None;
                     heading.clear();
@@ -197,6 +205,7 @@ fn render_item(
             &anchor_base,
             &section_id,
             &[&heading, &body, &breadcrumbs.join(" » ")],
+            single_page,
         );
     }
 
