@@ -128,7 +128,7 @@ impl HelperDef for RenderToc {
                     out.write("#")?;
 
                     if let Some(html) = item.get("content") {
-                        let html = html.replace("#", "").replace(".", "").trim().replace("'", "").replace("’", "").replace("’", "").replace(":", "").to_lowercase().to_owned();
+                        let html = html.replace("#", "").replace(".", "").trim().replace("'", "").replace("’", "").replace("’", "").replace(":", "").replace("(", "").replace(")", "").to_lowercase().to_owned();
                         let mut lines = html.lines();
                         if let Err(e) = out.write(&lines.next().unwrap().trim().replace(" ", "-")) {
                             println!("Error in writing single page link: {}", e);
